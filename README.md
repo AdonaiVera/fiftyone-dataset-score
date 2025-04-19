@@ -1,6 +1,8 @@
 # 🌍 FiftyOne Dataset Difficulty Scoring
 A powerful toolkit for analyzing and scoring the difficulty of object detection datasets in FiftyOne
 
+https://github.com/user-attachments/assets/1c08f985-fed9-4e20-8aa7-57c9b1920fe3
+
 ## 🎯 Project Vision
 
 In the field of computer vision and object detection, understanding the difficulty of your dataset is crucial for effective model training and evaluation. This plugin provides a comprehensive difficulty metric based on state-of-the-art research to help you understand your dataset's characteristics and make informed decisions about training strategies.
