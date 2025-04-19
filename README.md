@@ -1,7 +1,7 @@
 # 🌍 FiftyOne Dataset Difficulty Scoring
 A powerful toolkit for analyzing and scoring the difficulty of object detection datasets in FiftyOne
 
-https://github.com/user-attachments/assets/1c08f985-fed9-4e20-8aa7-57c9b1920fe3
+https://github.com/user-attachments/assets/6cea6d60-b54f-41f4-976d-6b412426cecd
 
 ## 🎯 Project Vision
 
