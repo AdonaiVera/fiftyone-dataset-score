@@ -11,5 +11,5 @@ from .dataset_difficulty_operator import DatasetDifficultyScoring
 
 def register(plugin):
     """Register operators with the plugin."""
-    # Register individual task operators
-    plugin.register(DatasetDifficultyScoring)
+    # Register the dataset difficulty scoring operator
+    foo.register_operator(DatasetDifficultyScoring)
