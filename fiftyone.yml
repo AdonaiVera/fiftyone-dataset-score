@@ -1,0 +1,8 @@
+fiftyone:
+  version: ">=1.3.0"
+name: "@adonaivera/fiftyone-dataset-score"
+version: "0.1.0"
+description: "Tools to score and improve dataset quality"
+url: "https://github.com/adonaivera/fiftyone-dataset-score"
+operators:
+  - dataset_difficulty_scoring

@@ -1,0 +1,6 @@
+# Ignore files with data
+models/data/*
+outputs/*
+
+# Ignore MacOS files
+.DS_Store
