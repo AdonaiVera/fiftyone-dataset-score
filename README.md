@@ -1,4 +1,7 @@
 # 🌍 FiftyOne Dataset Difficulty Scoring
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1PBxHTrxoq34gErlRtko3uDaodm5Yf4kE?usp=sharing)
+
 A powerful toolkit for analyzing and scoring the difficulty of object detection datasets in FiftyOne
 
 https://github.com/user-attachments/assets/6cea6d60-b54f-41f4-976d-6b412426cecd
@@ -8,8 +11,6 @@ https://github.com/user-attachments/assets/6cea6d60-b54f-41f4-976d-6b412426cecd
 In the field of computer vision and object detection, understanding the difficulty of your dataset is crucial for effective model training and evaluation. This plugin provides a comprehensive difficulty metric based on state-of-the-art research to help you understand your dataset's characteristics and make informed decisions about training strategies.
 
 Our goal is to make advanced dataset analysis techniques accessible to everyone - from individual developers and hobbyists to large companies. We provide easy-to-use tools that help you understand your dataset's difficulty profile without requiring deep expertise in the field.
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1PBxHTrxoq34gErlRtko3uDaodm5Yf4kE?usp=sharing)
 
 ## 🚀 Key Features
 
