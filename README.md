@@ -27,16 +27,16 @@ Our goal is to make advanced dataset analysis techniques accessible to everyone 
 
 ## 🛠️ Installation
 
+If you haven't already, install FiftyOne:
+
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/fiftyone-dataset-score.git
-cd fiftyone-dataset-score
+pip install -U fiftyone transformers<=4.49 accelerate einops timm torch ultralytics
+```
 
-# Install dependencies
-pip install -r requirements.txt
+Then, install the plugin:
 
-# Install the plugin in FiftyOne
-fiftyone plugins install .
+```bash
+fiftyone plugins download https://github.com/AdonaiVera/fiftyone-dataset-score
 ```
 
 ## 📚 Research-Backed Technique
@@ -49,6 +49,30 @@ fiftyone plugins install .
    - Measures how difficult an image is for a human to label
    - Based on [Ionescu et al. 2016](https://arxiv.org/pdf/1705.08280)
    - Simulates human visual search behavior
+
+### Individual Sample Scores (Object Detection Difficulty - ODD)
+- **Implementation**: Advanced scoring system based on [Zhang et al. 2023](https://arxiv.org/pdf/2308.11327)
+   - **Core Components**:
+     - FastSAM Object Detection: Runs FastSAM to predict object bbox
+     - IoU-based Classification: Categorizes predictions into P/M/N/NG based on IoU thresholds
+     - Weighted Metrics: Computes precision and recall with category-specific weights
+     - Harmonic Mean Scoring: Combines metrics into final ODD score
+   
+   - **Scoring Mechanism**:
+     - Categorizes predictions into four classes based on IoU:
+       - Positive (P): IoU > 0.8, weight = 1.0
+       - Multi-positive (M): 0.5 < IoU ≤ 0.8, weight = 0.5
+       - Near-positive (N): 0.3 < IoU ≤ 0.5, weight = 0.3
+       - Negative (NG): IoU ≤ 0.3, weight = 0.0
+     - Computes weighted precision and recall
+     - Final score = 1 - harmonic_mean(Wpr, Wrc)
+
+   - **Applications**:
+     - Ranks images by detection difficulty
+     - Identifies challenging samples for model training
+     - Helps balance dataset difficulty distribution
+     - Guides data augmentation strategies
+     - Supports quality control in dataset curation
 
 ## 🧠 Visual Search Time Difficulty Scoring
 
@@ -92,17 +116,12 @@ This approach provides a fast, interpretable baseline that leverages strong sema
 ## 🔮 Future Work
 We plan to implement additional difficulty metrics in future releases:
 
-1. **Object Detection Difficulty (ODD)**
-   - Measures how hard an image is for a detector to succeed
-   - Based on [Zhang et al. 2023](https://arxiv.org/pdf/2308.11327)
-   - Considers object size, context, overlap, and other factors
-
-2. **CNN Difficulty Predictor**
+1. **CNN Difficulty Predictor**
    - Lightweight CNN+SVR to predict detection difficulty
    - Based on [Soviany et al. 2018](https://arxiv.org/pdf/1803.08707)
    - Separates easy from hard images for detector selection
 
-3. **Zigzag Learning (Localization Difficulty)**
+2. **Zigzag Learning (Localization Difficulty)**
    - Quantifies how dispersed/confused the detector is about object location
    - Based on [Zhang et al. 2018](https://arxiv.org/pdf/1804.09466)
    - Uses energy accumulation from region proposals
@@ -161,9 +180,15 @@ We welcome contributions! If you're working on dataset difficulty analysis and h
 }
 ```
 
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+```bibtex
+@inproceedings{zhang2023object,
+  title={Object Detection Difficulty: Suppressing Over-aggregation for Faster and Better Video Object Detection},
+  author={Zhang, Bingqing and Wang, Sen and Liu, Yifan and Kusy, Brano and Li, Xue and Liu, Jiajun},
+  booktitle={Proceedings of the 31st ACM International Conference on Multimedia},
+  pages={1768--1778},
+  year={2023}
+}
+```
 
 ## 🙏 Acknowledgments
 

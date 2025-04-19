@@ -4,3 +4,4 @@ outputs/*
 
 # Ignore MacOS files
 .DS_Store
+methods/__pycache__

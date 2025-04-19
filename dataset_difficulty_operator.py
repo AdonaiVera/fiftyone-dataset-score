@@ -1,32 +1,23 @@
 import os
 os.environ['FIFTYONE_ALLOW_LEGACY_ORCHESTRATORS'] = 'true'
 
-# Set matplotlib backend to Agg to avoid GUI issues
-import matplotlib
-matplotlib.use('Agg')
 
 import fiftyone.operators as foo
 from fiftyone.operators import types
 import torch
-import numpy as np
 import logging
-from tqdm import tqdm
-import gc
-from typing import List, Dict, Any, Optional, Union, Tuple
-import matplotlib.pyplot as plt
-import io
-import base64
 from PIL import Image
-import clip
-import torch.nn as nn
-import torch.nn.functional as F
-import requests
-import tempfile
-import json
-import os
+import numpy as np
 
 # Import utility functions
-from .utils import _execution_mode
+from .methods.utils import (
+    _execution_mode,
+    batch_generator,
+    compute_summary_stats,
+    DEFAULT_BATCH_SIZE
+)
+from .methods.visual_search_score import visual_search_score, load_models, clean_memory as clean_vs_memory
+from .methods.odd_score import odd_score, clean_memory as clean_odd_memory
 
 # Set up logging
 logging.basicConfig(
@@ -36,139 +27,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dataset_difficulty_operator")
 
-# Batch processing constants
-DEFAULT_BATCH_SIZE = 8
-MAX_MEMORY_THRESHOLD = 0.9  
-
-# Model constants
-CLIP_MODEL_NAME = "ViT-B/32"
-REGRESSOR_MODEL_NAME = "adonaivera/fiftyone-dataset-score-regressor"
-
-# Global variables for models
-clip_model = None
-clip_preprocess = None
-regressor_model = None
-
-def get_device():
-    """Get the appropriate device for model inference."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        logger.info("MPS (Apple Silicon) detected. Using CPU for inference to avoid type mismatch issues.")
-        return torch.device("cpu")
-    return torch.device("cpu")
-
-def clean_memory():
-    """Clean up GPU memory."""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
-
-class DifficultyPredictor(nn.Module):
-    """A simple linear regressor for visual search time prediction."""
-    def __init__(self, input_dim):
-        super(DifficultyPredictor, self).__init__()
-        self.linear = nn.Linear(input_dim, 1)
-    
-    def forward(self, x):
-        return self.linear(x)
-
-def load_models():
-    """Load CLIP and regressor models."""
-    global clip_model, clip_preprocess, regressor_model
-    
-    device = get_device()
-    logger.info(f"Loading models on device: {device}")
-    
-    # Load CLIP model
-    if clip_model is None:
-        logger.info(f"Loading CLIP model: {CLIP_MODEL_NAME}")
-        clip_model, clip_preprocess = clip.load(CLIP_MODEL_NAME, device=device)
-    
-    # Load regressor model
-    if regressor_model is None:
-        logger.info(f"Loading regressor model: {REGRESSOR_MODEL_NAME}")
-        
-        # Create a temporary directory to download the model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Download model file
-            logger.info("Downloading model file...")
-            
-            # Get CLIP feature dimension
-            input_dim = clip_model.visual.output_dim
-            logger.info(f"CLIP feature dimension: {input_dim}")
-            
-            # Create the model
-            regressor_model = DifficultyPredictor(input_dim=input_dim)
-            
-            # Download model weights
-            weights_url = f"https://huggingface.co/{REGRESSOR_MODEL_NAME}/resolve/main/model.pt"
-            weights_path = os.path.join(temp_dir, "model.pt")
-            response = requests.get(weights_url)
-            with open(weights_path, "wb") as f:
-                f.write(response.content)
-            
-            # Load weights
-            state_dict = torch.load(weights_path, map_location=device)
-            regressor_model.load_state_dict(state_dict)
-        
-        # Move model to device and set to eval mode
-        regressor_model.to(device)
-        regressor_model.eval()
-    
-    return device
-
-def visual_search_score(image, device):
+def extract_boxes_and_classes(detections):
     """
-    Compute visual search time difficulty score for an image.
+    Extract bounding boxes and classes from FiftyOne detections
     
     Args:
-        image: PIL Image
-        device: torch device
+        detections: FiftyOne detections field
         
     Returns:
-        float: Visual search time difficulty score
+        List of [x1, y1, x2, y2, class] for each detection
     """
-    global clip_model, clip_preprocess, regressor_model
+    boxes = []
+    for det in detections:
+        # Get bounding box coordinates
+        bbox = det.bounding_box  # [x, y, w, h] format
+        x1 = bbox[0]
+        y1 = bbox[1]
+        x2 = x1 + bbox[2]  # x + w
+        y2 = y1 + bbox[3]  # y + h
+        
+        # Get class label
+        class_label = det.label
+        
+        boxes.append([x1, y1, x2, y2, class_label])
     
-    # Ensure models are loaded
-    if clip_model is None or regressor_model is None:
-        device = load_models()
-    
-    # Preprocess image for CLIP
-    image_input = clip_preprocess(image).unsqueeze(0).to(device)
-    
-    # Get CLIP image features
-    with torch.no_grad():
-        image_features = clip_model.encode_image(image_input)
-        # Ensure consistent data type
-        image_features = image_features.to(torch.float32)
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-    
-    # Pass features through regressor
-    with torch.no_grad():
-        # Ensure consistent data type
-        image_features = image_features.to(torch.float32)
-        outputs = regressor_model(image_features)
-        score = outputs.item()
-        logger.info(f"Final score: {score}")
-    
-    return score
-
-def batch_generator(dataset, batch_size: int):
-    """Generate batches of samples from the dataset."""
-    samples = list(dataset.iter_samples())  
-    for i in range(0, len(samples), batch_size):
-        yield samples[i:i + batch_size]
-
-def plot_to_base64(fig):
-    """Convert a matplotlib figure to a base64 encoded string."""
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight')
-    buf.seek(0)
-    img_str = base64.b64encode(buf.read()).decode('utf-8')
-    plt.close(fig)
-    return img_str
+    return boxes
 
 class DatasetDifficultyScoring(foo.Operator):
     @property
@@ -176,7 +59,7 @@ class DatasetDifficultyScoring(foo.Operator):
         return foo.OperatorConfig(
             name="dataset_difficulty_scoring",
             label="Dataset Difficulty Scoring",
-            description="Score dataset samples based on Visual Search Time difficulty metric",
+            description="Score dataset samples based on Visual Search Time and Object Detection Difficulty metrics",
             icon="/assets/difficulty-icon.svg", 
             dynamic=True,
         )
@@ -194,61 +77,42 @@ class DatasetDifficultyScoring(foo.Operator):
             max=1.0
         )
 
-        # # Add difficulty metrics selection  
-        # metrics_radio = types.RadioGroup()
-        # metrics_radio.add_choice("all", label="All Metrics")
-        # metrics_radio.add_choice("visual", label="Visual Search Time")
-        # metrics_radio.add_choice("odd", label="Object Detection Difficulty")
-        # metrics_radio.add_choice("cnn", label="CNN Difficulty Predictor")
-        # metrics_radio.add_choice("zigzag", label="Zigzag Learning")
-        # 
-        # inputs.enum(
-        #     "difficulty_metrics",
-        #     metrics_radio.values(),
-        #     label="Difficulty Metrics",
-        #     description="Select which difficulty metrics to compute",
-        #     default="all"
-        # )
-
-        # Add visualization options
-        inputs.bool(
-            "show_histograms",
-            default=True,
-            label="Show Histograms",
-            description="Generate histograms of difficulty scores"
+        # Add difficulty metrics selection  
+        metrics_radio = types.RadioGroup()
+        metrics_radio.add_choice("all", label="All Metrics")
+        metrics_radio.add_choice("visual", label="Visual Search Time")
+        metrics_radio.add_choice("odd", label="Object Detection Difficulty")
+        
+        inputs.enum(
+            "difficulty_metrics",
+            metrics_radio.values(),
+            label="Difficulty Metrics",
+            description="Select which difficulty metrics to compute",
+            default="all"
         )
 
-        # # Add scatter plots option  
-        # inputs.bool(
-        #     "show_scatter_plots",
-        #     default=True,
-        #     label="Show Scatter Plots",
-        #     description="Generate scatter plots of difficulty metrics"
-        # )
-
-        # Add output fields
+        # Add output fields for individual metrics
         inputs.str(
-            "output_field",
-            default="difficulty_score",
-            label="Difficulty Score Field",
-            description="Field to store the final difficulty score"
+            "visual_score_field",
+            default="visual_search_score",
+            label="Visual Search Score Field",
+            description="Field to store the visual search difficulty score"
+        )
+        
+        inputs.str(
+            "odd_score_field",
+            default="odd_score",
+            label="Object Detection Difficulty Score Field",
+            description="Field to store the object detection difficulty score"
         )
 
-        # # Add metrics field  
-        # inputs.str(
-        #     "metrics_field",
-        #     default="difficulty_metrics",
-        #     label="Metrics Field",
-        #     description="Field to store individual difficulty metrics"
-        # )
-
-        # # Add recommendation field  
-        # inputs.str(
-        #     "recommendation_field",
-        #     default="difficulty_recommendation",
-        #     label="Recommendation Field",
-        #     description="Field to store recommendations based on difficulty"
-        # )
+        # Add final score field
+        inputs.str(
+            "final_score_field",
+            default="difficulty_score",
+            label="Final Difficulty Score Field",
+            description="Field to store the final combined difficulty score"
+        )
 
         # Add execution mode input
         _execution_mode(ctx, inputs)
@@ -273,16 +137,14 @@ class DatasetDifficultyScoring(foo.Operator):
         
         # Get parameters
         dataset_percentage = ctx.params.get("dataset_percentage", 1.0)
-        # difficulty_metrics = ctx.params.get("difficulty_metrics", "all")  # Commented for future use
-        show_histograms = ctx.params.get("show_histograms", True)
-        # show_scatter_plots = ctx.params.get("show_scatter_plots", True)  # Commented for future use
-        output_field = ctx.params.get("output_field", "difficulty_score")
-        # metrics_field = ctx.params.get("metrics_field", "difficulty_metrics")  # Commented for future use
-        # recommendation_field = ctx.params.get("recommendation_field", "difficulty_recommendation")  # Commented for future use
+        difficulty_metrics = ctx.params.get("difficulty_metrics", "all")
+        visual_score_field = ctx.params.get("visual_score_field", "visual_search_score")
+        odd_score_field = ctx.params.get("odd_score_field", "odd_score")
+        final_score_field = ctx.params.get("final_score_field", "difficulty_score")
         batch_size = ctx.params.get("batch_size", DEFAULT_BATCH_SIZE)
         
         logger.info(f"Parameters: dataset_percentage={dataset_percentage}, "
-                   f"show_histograms={show_histograms}")
+                   f"difficulty_metrics={difficulty_metrics}")
 
         # Load models and get device
         device = load_models()
@@ -303,27 +165,36 @@ class DatasetDifficultyScoring(foo.Operator):
             # Initialize metrics storage
             all_scores = []
             
-            # # Initialize metrics storage for multiple metrics  
-            # all_metrics = {
-            #     "visual": [],
-            #     "odd": [],
-            #     "cnn": [],
-            #     "zigzag": [],
-            #     "final_score": []
-            # }
+            # Initialize metrics storage for multiple metrics  
+            all_metrics = {
+                "visual": [],
+                "odd": [],
+                "final_score": []
+            }
             
             # Process dataset in batches
             with torch.no_grad():  # Disable gradient computation
-                for batch in tqdm(batch_generator(dataset, batch_size), total=(total_samples + batch_size - 1) // batch_size):
+                for batch in batch_generator(dataset, batch_size):
                     batch_images = []
                     batch_filepaths = []
+                    batch_ground_truths = []
                     
                     # Prepare batch data
                     for sample in batch:
                         try:
+                            # Load image for visual search score and ODD score
                             image = Image.open(sample.filepath)
                             batch_images.append(image)
                             batch_filepaths.append(sample.filepath)
+                            
+                            # Extract ground truth boxes
+                            if hasattr(sample, 'ground_truth'):
+                                gt_boxes = extract_boxes_and_classes(sample.ground_truth.detections)
+                                batch_ground_truths.append(gt_boxes)
+                            else:
+                                logger.warning(f"Sample {sample.filepath} missing ground truth. Using empty boxes.")
+                                batch_ground_truths.append([])
+                                
                         except (FileNotFoundError, OSError) as e:
                             logger.warning(f"Could not open image {sample.filepath}: {str(e)}. Skipping...")
                             continue
@@ -331,141 +202,74 @@ class DatasetDifficultyScoring(foo.Operator):
                     if not batch_images:
                         continue
                     
-                    # Compute Visual Search Time difficulty for batch
-                    for i, (image, filepath) in enumerate(zip(batch_images, batch_filepaths)):
+                    # Compute difficulty metrics for batch
+                    for i, (image, filepath, ground_truths) in enumerate(zip(batch_images, batch_filepaths, batch_ground_truths)):
                         try:
-                            # Use the visual_search_score function to compute the score
-                            visual_search_score_value = visual_search_score(image, device)
+                            # Initialize metrics dictionary
+                            metrics = {}
                             
-                            # # Compute other difficulty metrics  
-                            # odd_score = np.random.random()    
-                            # cnn_score = np.random.random()    
-                            # zigzag_score = np.random.random() 
-                            # 
-                            # # Compute final score (weighted average)
-                            # final_score = 0.25 * visual_search_score + 0.25 * odd_score + 0.25 * cnn_score + 0.25 * zigzag_score
-                            # 
-                            # # Store metrics
-                            # metrics = {
-                            #     "visual": float(visual_search_score),
-                            #     "odd": float(odd_score),
-                            #     "cnn": float(cnn_score),
-                            #     "zigzag": float(zigzag_score),
-                            #     "final_score": float(final_score)
-                            # }
+                            # Calculate scores based on selected metrics
+                            if difficulty_metrics == "visual":
+                                score = visual_search_score(image, device)
+                                metrics["visual"] = float(score)
+                                final_score = score
+                                
+                                # Update dataset sample with individual fields
+                                sample = dataset[filepath]
+                                sample[visual_score_field] = float(score)
+                                sample[final_score_field] = float(final_score)
+                                sample.save()
+                                
+                            elif difficulty_metrics == "odd":
+                                score = odd_score(image, ground_truths)
+                                metrics["odd"] = float(score)
+                                final_score = score
+                                
+                                # Update dataset sample with individual fields
+                                sample = dataset[filepath]
+                                sample[odd_score_field] = float(score)
+                                sample[final_score_field] = float(final_score)
+                                sample.save()
+                                
+                            else:  # Combined metrics
+                                vs_score = visual_search_score(image, device)
+                                odd_score_val = odd_score(image, ground_truths)
+                                metrics = {
+                                    "visual": float(vs_score),
+                                    "odd": float(odd_score_val)
+                                }
+                                final_score = 0.5 * vs_score + 0.5 * odd_score_val
+                                
+                                # Update dataset sample with individual fields
+                                sample = dataset[filepath]
+                                sample[visual_score_field] = float(vs_score)
+                                sample[odd_score_field] = float(odd_score_val)
+                                sample[final_score_field] = float(final_score)
+                                sample.save()
                             
-                            # Update sample with score
-                            sample = dataset[filepath]
-                            sample[output_field] = float(visual_search_score_value)
-                            
-                            # # Update sample with all metrics  
-                            # sample[metrics_field] = metrics
-                            
-                            # # Generate recommendation based on score  
-                            # if visual_search_score < 3.0:
-                            #     recommendation = "Easy: Ready for training"
-                            # elif visual_search_score < 4.0:
-                            #     recommendation = "Medium: Consider augmentations or super-resolution"
-                            # else:
-                            #     recommendation = "Hard: Suggest manual labeling or curriculum learning"
-                            # 
-                            # sample[recommendation_field] = recommendation
-                            sample.save()
-                            
-                            # Store score for visualization
-                            all_scores.append(visual_search_score_value)
-                            
-                            # # Store metrics for visualization  
-                            # all_metrics["visual"].append(visual_search_score)
-                            # all_metrics["odd"].append(odd_score)
-                            # all_metrics["cnn"].append(cnn_score)
-                            # all_metrics["zigzag"].append(zigzag_score)
-                            # all_metrics["final_score"].append(final_score)
+                            # Store scores for summary statistics
+                            all_scores.append(final_score)
+                            for metric, value in metrics.items():
+                                all_metrics[metric].append(value)
+                            all_metrics["final_score"].append(final_score)
                             
                         except Exception as e:
                             logger.error(f"Error processing sample {filepath}: {str(e)}")
                             continue
                     
                     # Clean up memory
-                    clean_memory()
-            
-            # Generate visualizations
-            visualizations = {}
-            
-            if show_histograms:
-                # Create histogram of difficulty scores
-                fig, ax = plt.subplots(figsize=(10, 6))
-                ax.hist(all_scores, bins=20, alpha=0.7)
-                ax.set_title('Distribution of Visual Search Time Difficulty Scores')
-                ax.set_xlabel('Score')
-                ax.set_ylabel('Count')
-                visualizations["difficulty_histogram"] = plot_to_base64(fig)
-                
-                # # Create histograms for each metric  
-                # for metric_name, values in all_metrics.items():
-                #     fig, ax = plt.subplots(figsize=(10, 6))
-                #     ax.hist(values, bins=20, alpha=0.7)
-                #     ax.set_title(f'Distribution of {metric_name} Scores')
-                #     ax.set_xlabel('Score')
-                #     ax.set_ylabel('Count')
-                #     visualizations[f"{metric_name}_histogram"] = plot_to_base64(fig)
-            
-            # # Create scatter plots for metric pairs  
-            # if show_scatter_plots:
-            #     metric_pairs = [
-            #         ("visual", "odd"),
-            #         ("visual", "cnn"),
-            #         ("visual", "zigzag"),
-            #         ("odd", "cnn"),
-            #         ("odd", "zigzag"),
-            #         ("cnn", "zigzag")
-            #     ]
-            #     
-            #     for metric1, metric2 in metric_pairs:
-            #         fig, ax = plt.subplots(figsize=(10, 6))
-            #         ax.scatter(all_metrics[metric1], all_metrics[metric2], alpha=0.5)
-            #         ax.set_title(f'{metric1} vs {metric2} Scores')
-            #         ax.set_xlabel(metric1)
-            #         ax.set_ylabel(metric2)
-            #         visualizations[f"{metric1}_{metric2}_scatter"] = plot_to_base64(fig)
+                    clean_vs_memory()
+                    clean_odd_memory()
             
             # Compute summary statistics
-            summary_stats = {
-                "mean": float(np.mean(all_scores)),
-                "median": float(np.median(all_scores)),
-                "std": float(np.std(all_scores)),
-                "min": float(np.min(all_scores)),
-                "max": float(np.max(all_scores))
-            }
-            
-            # # Compute summary statistics for multiple metrics  
-            # summary_stats = {}
-            # for metric_name, values in all_metrics.items():
-            #     summary_stats[metric_name] = {
-            #         "mean": float(np.mean(values)),
-            #         "median": float(np.median(values)),
-            #         "std": float(np.std(values)),
-            #         "min": float(np.min(values)),
-            #         "max": float(np.max(values))
-            #     }
-            
-            # # Generate overall recommendations  
-            # mean_score = summary_stats["mean"]
-            # if mean_score < 3.0:
-            #     overall_recommendation = "Dataset is generally easy. Consider using standard training approaches."
-            # elif mean_score < 4.0:
-            #     overall_recommendation = "Dataset has moderate difficulty. Consider using data augmentation and curriculum learning."
-            # else:
-            #     overall_recommendation = "Dataset is challenging. Consider manual labeling for difficult samples and specialized model architectures."
+            summary_stats = compute_summary_stats(all_scores)
             
             logger.info("Dataset difficulty scoring completed successfully")
             
             # Return results
             return {
                 "success": True,
-                "summary_stats": summary_stats,
-                # "overall_recommendation": overall_recommendation,  # Commented for future use
-                "visualizations": visualizations
+                "summary_stats": summary_stats
             }
             
         except Exception as e:
@@ -474,7 +278,8 @@ class DatasetDifficultyScoring(foo.Operator):
         
         finally:
             # Clean up
-            clean_memory()
+            clean_vs_memory()
+            clean_odd_memory()
             ctx.ops.reload_dataset()
 
 def register(plugin):

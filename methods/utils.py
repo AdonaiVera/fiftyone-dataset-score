@@ -4,6 +4,36 @@ os.environ['FIFTYONE_ALLOW_LEGACY_ORCHESTRATORS'] = 'true'
 import fiftyone as fo
 import fiftyone.operators as foo
 from fiftyone.operators import types
+import numpy as np
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='dataset_difficulty.log'
+)
+logger = logging.getLogger("utils")
+
+# Batch processing constants
+DEFAULT_BATCH_SIZE = 8
+MAX_MEMORY_THRESHOLD = 0.9
+
+def batch_generator(dataset, batch_size: int):
+    """Generate batches of samples from the dataset."""
+    samples = list(dataset.iter_samples())  
+    for i in range(0, len(samples), batch_size):
+        yield samples[i:i + batch_size]
+
+def compute_summary_stats(scores):
+    """Compute summary statistics for difficulty scores."""
+    return {
+        "mean": float(np.mean(scores)),
+        "median": float(np.median(scores)),
+        "std": float(np.std(scores)),
+        "min": float(np.min(scores)),
+        "max": float(np.max(scores))
+    }
 
 # Common UI utilities
 def _model_choice_inputs(ctx, inputs):
