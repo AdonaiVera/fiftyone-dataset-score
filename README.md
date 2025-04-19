@@ -9,6 +9,8 @@ In the field of computer vision and object detection, understanding the difficul
 
 Our goal is to make advanced dataset analysis techniques accessible to everyone - from individual developers and hobbyists to large companies. We provide easy-to-use tools that help you understand your dataset's difficulty profile without requiring deep expertise in the field.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1PBxHTrxoq34gErlRtko3uDaodm5Yf4kE?usp=sharing)
+
 ## 🚀 Key Features
 
 ### Dataset Difficulty Scoring
