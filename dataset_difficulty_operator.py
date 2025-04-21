@@ -205,8 +205,8 @@ class DatasetDifficultyScoring(foo.Operator):
                                 gt_boxes = extract_boxes_and_classes(sample.ground_truth.detections)
                                 batch_ground_truths.append(gt_boxes)
                             else:
-                                logger.warning(f"Sample {sample.filepath} missing ground truth. Using empty boxes.")
-                                batch_ground_truths.append([])
+                                logger.warning(f"Sample {sample.filepath} missing ground truth. Skipping image.")
+                                continue
                                 
                         except (FileNotFoundError, OSError) as e:
                             logger.warning(f"Could not open image {sample.filepath}: {str(e)}. Skipping...")
