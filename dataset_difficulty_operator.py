@@ -277,12 +277,20 @@ class DatasetDifficultyScoring(foo.Operator):
             # Compute summary statistics
             summary_stats = compute_summary_stats(all_scores)
             
+            # Compute summary statistics for each individual metric
+            visual_summary_stats = compute_summary_stats(all_metrics["visual"]) if all_metrics["visual"] else {}
+            odd_summary_stats = compute_summary_stats(all_metrics["odd"]) if all_metrics["odd"] else {}
+            final_score_summary_stats = compute_summary_stats(all_metrics["final_score"]) if all_metrics["final_score"] else {}
+            
             logger.info("Dataset difficulty scoring completed successfully")
             
-            # Return results
+            # Return results with individual metric statistics
             return {
                 "success": True,
-                "summary_stats": summary_stats
+                "summary_stats": summary_stats,
+                "visual_search_stats": visual_summary_stats,
+                "odd_stats": odd_summary_stats,
+                "final_score_stats": final_score_summary_stats
             }
             
         except Exception as e:
