@@ -135,6 +135,18 @@ class DatasetDifficultyScoring(foo.Operator):
     def execute(self, ctx):
         logger.info("Starting dataset difficulty scoring operation")
         
+
+        # Support both execution modes
+        params = ctx.params if hasattr(ctx, "params") else ctx
+
+        dataset_percentage = params.get("dataset_percentage", 1.0)
+        difficulty_metrics = params.get("difficulty_metrics", "all")
+        visual_score_field = params.get("visual_score_field", "visual_search_score")
+        odd_score_field = params.get("odd_score_field", "odd_score")
+        final_score_field = params.get("final_score_field", "difficulty_score")
+        batch_size = params.get("batch_size", DEFAULT_BATCH_SIZE)
+        
+        '''
         # Get parameters
         dataset_percentage = ctx.params.get("dataset_percentage", 1.0)
         difficulty_metrics = ctx.params.get("difficulty_metrics", "all")
@@ -142,6 +154,7 @@ class DatasetDifficultyScoring(foo.Operator):
         odd_score_field = ctx.params.get("odd_score_field", "odd_score")
         final_score_field = ctx.params.get("final_score_field", "difficulty_score")
         batch_size = ctx.params.get("batch_size", DEFAULT_BATCH_SIZE)
+        '''
         
         logger.info(f"Parameters: dataset_percentage={dataset_percentage}, "
                    f"difficulty_metrics={difficulty_metrics}")
